@@ -80,6 +80,7 @@ def prepare_data(series, n_test, n_lag, n_seq):
 def fit_lstm(train, n_lag, n_seq, n_batch, nb_epoch, n_neurons):
 	# reshape training into [samples, timesteps, features]
 	X, y = train[:, 0:n_lag], train[:, n_lag:]
+	print("****************Y SHAPE: ", str(y.shape))
 	X = X.reshape(X.shape[0], 1, X.shape[1])
 	# design network
 	model = Sequential()
@@ -133,9 +134,66 @@ def make_forecasts(model, n_batch, train, test, n_lag, n_seq):
 		forecasts.append(forecast)
 	return forecasts
 
+# invert differenced forecast
+def inverse_difference(last_ob, forecast):
+	# invert first forecast
+	inverted = list()
+	inverted.append(forecast[0] + last_ob)
+	# propagate difference forecast using inverted first value
+	for i in range(1, len(forecast)):
+		inverted.append(forecast[i] + inverted[i-1])
+	return inverted
 
 
-# split a univariate sequence into samples
+# inverse data transform on forecasts
+def inverse_transform(series, forecasts, scaler, n_test):
+	inverted = list()
+	for i in range(len(forecasts)):
+		# create array from forecast
+		forecast = array(forecasts[i])
+		forecast = forecast.reshape(1, len(forecast))
+		# invert scaling
+		inv_scale = scaler.inverse_transform(forecast)
+		inv_scale = inv_scale[0, :]
+		# invert differencing
+		index = len(series) - n_test + i - 1
+		last_ob = series.values[index]
+		inv_diff = inverse_difference(last_ob, inv_scale)
+		# store
+		inverted.append(inv_diff)
+	return inverted
+
+# evaluate the RMSE for each forecast time step
+def evaluate_forecasts(test, forecasts, n_lag, n_seq):
+	for i in range(n_seq):
+		actual = [row[i] for row in test]
+		predicted = [forecast[i] for forecast in forecasts]
+		rmse = sqrt(mean_squared_error(actual, predicted))
+		print('t+%d RMSE: %f' % ((i+1), rmse))
+
+# plot the forecasts in the context of the original dataset
+def plot_forecasts(series, forecasts, n_test):
+	# plot the entire dataset in blue
+	pyplot.plot(series.values)
+	# plot the forecasts in red
+	for i in range(len(forecasts)):
+		off_s = len(series) - n_test + i - 1
+		print("OFF_S: ", str(off_s))
+		off_e = off_s + len(forecasts[i]) + 1
+		print("OFF_E: ", str(off_e))
+		xaxis = [x for x in range(off_s, off_e)]
+		print("XAXIS: ", str(xaxis))
+		yaxis = [series.values[off_s]] + forecasts[i]
+		print("YAXIS: ", str(yaxis))
+		pyplot.plot(xaxis, yaxis, color='red')
+	# show the plot
+	pyplot.show()
+
+
+'''split a univariate sequence into samples 
+	output-X = sequences of length: n-steps 
+	output-Y = the value after that sequence
+'''
 def split_sequence(sequence, n_steps):
 	X, y = list(), list()
 	for i in range(len(sequence)):
@@ -152,20 +210,19 @@ def split_sequence(sequence, n_steps):
 
 def fit_cnn_lstm(train, n_lag, n_seq, n_batch, nb_epoch, n_neurons):
 
-	
 	# choose a number of time steps
 	n_steps = 4
-
 	print("TRAIN SHAPE BEFORE SPLIT: ", str(train.shape))
-	# split into samples
-	X, y = split_sequence(train, n_steps)
 
-	print("TRAIN SHAPE: ", str(X.shape))
-	# X, y = train[:, 0:n_lag], train[:, n_lag:]
+	# split into samples (sequences of n_steps and the next value in the sequence)
+	X, y = split_sequence(train, n_steps)
+	print("SPLIT SHAPE: ", str(X.shape))
+
 	# reshape from [samples, timesteps] into [samples, subsequences, timesteps, features]
-	n_features = 1
-	n_seq = 2
-	n_steps = 2
+	n_features = 1 	# this might be the dimension of the input
+					# we use 1D time series data, so this is 1
+	n_seq = 2	# subsequences per sample
+	n_steps = 2	# timesteps per subsequence
 	X = X.reshape((X.shape[0], n_seq, n_steps, n_features))
 	print("RESHAPED TRAIN SHAPE: ", str(X.shape))
 
@@ -219,37 +276,6 @@ def make_cnn_forecasts(model, n_batch, train, test, n_lag, n_seq):
 		forecasts.append(forecast)
 	return forecasts
 
-
-
-# invert differenced forecast
-def inverse_difference(last_ob, forecast):
-	# invert first forecast
-	inverted = list()
-	inverted.append(forecast[0] + last_ob)
-	# propagate difference forecast using inverted first value
-	for i in range(1, len(forecast)):
-		inverted.append(forecast[i] + inverted[i-1])
-	return inverted
-
-
-# inverse data transform on forecasts
-def inverse_transform(series, forecasts, scaler, n_test):
-	inverted = list()
-	for i in range(len(forecasts)):
-		# create array from forecast
-		forecast = array(forecasts[i])
-		forecast = forecast.reshape(1, len(forecast))
-		# invert scaling
-		inv_scale = scaler.inverse_transform(forecast)
-		inv_scale = inv_scale[0, :]
-		# invert differencing
-		index = len(series) - n_test + i - 1
-		last_ob = series.values[index]
-		inv_diff = inverse_difference(last_ob, inv_scale)
-		# store
-		inverted.append(inv_diff)
-	return inverted
-
 # invert differenced forecast
 def inverse_cnn_difference(last_ob, forecast):
 	# invert first forecast
@@ -277,40 +303,13 @@ def inverse_cnn_transform(series, forecasts, scaler, n_test):
 	return inverted
 
 
-
-# evaluate the RMSE for each forecast time step
-def evaluate_forecasts(test, forecasts, n_lag, n_seq):
-	for i in range(n_seq):
-		actual = [row[i] for row in test]
-		predicted = [forecast[i] for forecast in forecasts]
-		rmse = sqrt(mean_squared_error(actual, predicted))
-		print('t+%d RMSE: %f' % ((i+1), rmse))
-
-# plot the forecasts in the context of the original dataset
-def plot_forecasts(series, forecasts, n_test):
-	# plot the entire dataset in blue
-	pyplot.plot(series.values)
-	# plot the forecasts in red
-	for i in range(len(forecasts)):
-		off_s = len(series) - n_test + i - 1
-		print("OFF_S: ", str(off_s))
-		off_e = off_s + len(forecasts[i]) + 1
-		print("OFF_E: ", str(off_e))
-		xaxis = [x for x in range(off_s, off_e)]
-		print("XAXIS: ", str(xaxis))
-		yaxis = [series.values[off_s]] + forecasts[i]
-		print("YAXIS: ", str(yaxis))
-		pyplot.plot(xaxis, yaxis, color='red')
-	# show the plot
-	pyplot.show()
-
 # plot the forecasts in the context of the original dataset
 def plot_cnn_forecasts(series, forecasts, n_test):
 	# plot the entire dataset in blue
 	pyplot.plot(series.values)
 	# plot the forecasts in red
 	for i in range(len(forecasts)):
-		off_s = len(series) - n_test + i*3 - 1 # start offset
+		off_s = len(series) - n_test + (i)*3 - 1 # start offset
 		off_e = off_s + len(forecasts[i]) + 1 # end offset
 		xaxis = [x for x in range(off_s, off_e)]
 		yaxis = [series.values[off_s]] + forecasts[i]
@@ -325,7 +324,7 @@ series = read_csv('shampoo-sales.csv', header=0, parse_dates=[0], index_col=0, s
 n_lag = 1
 n_seq = 3
 n_test = 10
-n_epochs = 20 #1500
+n_epochs = 100 #1500
 n_batch = 1
 n_neurons = 1
 

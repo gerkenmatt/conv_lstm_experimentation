@@ -20,6 +20,9 @@ from numpy import array
 def parser(x):
 	return datetime.strptime('190'+x, '%Y-%m')
 
+def parser2(x):
+	return datetime.strptime(x, '%Y-%m')
+
 # convert time series into supervised learning problem
 def series_to_supervised(data, n_in=1, n_out=1, dropnan=True):
 	n_vars = 1 if type(data) is list else data.shape[1]
@@ -88,7 +91,10 @@ def fit_lstm(train, n_lag, n_seq, n_batch, nb_epoch, n_neurons):
 	model.add(Dense(y.shape[1]))
 	model.compile(loss='mean_squared_error', optimizer='adam')
 	# fit network
+	print("FITTING: ")
 	for i in range(nb_epoch):
+		if (i % 10) == 0:
+			print("   epoch: ", str(i))
 		model.fit(X, y, epochs=1, batch_size=n_batch, verbose=0, shuffle=False)
 		model.reset_states()
 	return model
@@ -317,50 +323,65 @@ def plot_cnn_forecasts(series, forecasts, n_test):
 	# show the plot
 	pyplot.show()
 
+useLSTM = True
+useConvLSTM = False
+
 # load dataset
 print("LOAD DATASET")
-series = read_csv('shampoo-sales.csv', header=0, parse_dates=[0], index_col=0, squeeze=True, date_parser=parser)
+series = read_csv('international-airline-passengers.csv', header=0, parse_dates=[0], index_col=0, squeeze=True, date_parser=parser2)
+# series = read_csv('shampoo-sales.csv', header=0, parse_dates=[0], index_col=0, squeeze=True, date_parser=parser)
 # configure
-n_lag = 1
-n_seq = 3
-n_test = 10
-n_epochs = 100 #1500
+n_lag = 10
+n_seq = 20
+n_test = 3#10
+n_epochs = 500 #1500
 n_batch = 1
 n_neurons = 1
 
 # prepare data
 print("PREPARE DATA")
 
-scaler, train, test = prepare_raw_data(series, n_test, n_lag, n_seq)
-scaler2, train2, test2 = prepare_data(series, n_test, n_lag, n_seq)
-print("TRAIN2 SHAPE: ", str(train2.shape))
+if useConvLSTM: 
+	scaler, train, test = prepare_raw_data(series, n_test, n_lag, n_seq)
+if useLSTM: 
+	scaler2, train2, test2 = prepare_data(series, n_test, n_lag, n_seq)
+	print("TRAIN2 SHAPE: ", str(train2.shape))
 
 # fit model
 print("FIT LSTM")
-model =fit_cnn_lstm(train, n_lag, n_seq, n_batch, n_epochs, n_neurons) 
-model2 = fit_lstm(train2, n_lag, n_seq, n_batch, n_epochs, n_neurons)
+if useConvLSTM: 
+	model =fit_cnn_lstm(train, n_lag, n_seq, n_batch, n_epochs, n_neurons) 
+if useLSTM: 
+	model2 = fit_lstm(train2, n_lag, n_seq, n_batch, n_epochs, n_neurons)
 
 # make forecasts
 print("MAKE FORECASTS")
-forecasts = make_cnn_forecasts(model, n_batch, train, test, n_lag, n_seq)
-forecasts2 = make_forecasts(model2, n_batch, train2, test2, n_lag, n_seq)
+if useConvLSTM: 
+	forecasts = make_cnn_forecasts(model, n_batch, train, test, n_lag, n_seq)
+if useLSTM: 
+	forecasts2 = make_forecasts(model2, n_batch, train2, test2, n_lag, n_seq)
 
 
 # inverse transform forecasts and test
 print("INVERSE TRANSFORM")
-forecasts2 = inverse_transform(series, forecasts2, scaler2, n_test+2)
-actual2 = [row[n_lag:] for row in test2]
-actual2 = inverse_transform(series, actual2, scaler2, n_test+2)
+if useLSTM: 
+	forecasts2 = inverse_transform(series, forecasts2, scaler2, n_test+2)
+	actual2 = [row[n_lag:] for row in test2]
+	actual2 = inverse_transform(series, actual2, scaler2, n_test+2)
 
-forecasts = inverse_transform(series, forecasts, scaler, n_test+2)
+if useConvLSTM: 
+	forecasts = inverse_transform(series, forecasts, scaler, n_test+2)
 
 
 # evaluate forecasts
 print("EVALUATE FORECASTS")
-evaluate_forecasts(actual2, forecasts2, n_lag, n_seq)
+if useLSTM: 
+	evaluate_forecasts(actual2, forecasts2, n_lag, n_seq)
 
 # plot forecasts
 print("PLOT FORECASTS")
-plot_forecasts(series, forecasts2, n_test+2)
-plot_cnn_forecasts(series, forecasts, n_test+2)
+if useLSTM: 
+	plot_forecasts(series, forecasts2, n_test+2)
+if useConvLSTM: 
+	plot_cnn_forecasts(series, forecasts, n_test+2)
 print("********************DONE")

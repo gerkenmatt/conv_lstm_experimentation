@@ -51,6 +51,7 @@ def series_to_supervised(data, n_in=1, n_out=1, dropnan=True):
 def difference(dataset, interval=1):
 	diff = list()
 	for i in range(interval, len(dataset)):
+		# new value is the difference between the two adjacent points
 		value = dataset[i] - dataset[i - interval]
 		diff.append(value)
 	return Series(diff)
@@ -59,15 +60,19 @@ def difference(dataset, interval=1):
 def prepare_data(series, n_test, n_lag, n_seq):
 	# extract raw values
 	raw_values = series.values
-	# transform data to be stationary
+
+	# transform data to be stationary: values are now the differences between adjacent points
 	diff_series = difference(raw_values, 1)
 	diff_values = diff_series.values
 	diff_values = diff_values.reshape(len(diff_values), 1)
-	# rescale values to -1, 1
+	
+	# rescale values to be between -1, 1
 	scaler = MinMaxScaler(feature_range=(-1, 1))
 	scaled_values = scaler.fit_transform(diff_values)
 	scaled_values = scaled_values.reshape(len(scaled_values), 1)
+
 	# transform into supervised learning problem X, y
+	# breaks up the data into train and test data
 	supervised = series_to_supervised(scaled_values, n_lag, n_seq)
 	supervised_values = supervised.values
 	print("SUPERVISED VALUES SHAPE: ", str(supervised_values.shape))
